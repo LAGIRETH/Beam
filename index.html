@@ -189,11 +189,13 @@
                 if (!response.ok) throw new Error('Signaling broker unreachable');
                 
                 const text = await response.text();
-                const b64Offer = text.trim();
-
-                if (!b64Offer) {
+                
+                // FIXED: Strip out any potential empty network frames from the offer payload
+                const lines = text.split('\n').map(l => l.trim()).filter(l => l !== '');
+                if (lines.length === 0) {
                     throw new Error('Connection payload missing or expired on signaling broker');
                 }
+                const b64Offer = lines[0];
 
                 const offerSDP = atob(b64Offer);
                 uiState('Constructing transport tunnel...', 'loading');
@@ -258,7 +260,6 @@
 
                 const b64Answer = btoa(pc.localDescription.sdp);
 
-                // FIXED: Fixed template literal variable interpolation syntax error (%s -> ${roomID})
                 await fetch(`https://ntfy.sh/beam_${roomID}_answer`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'text/plain' },
