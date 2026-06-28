@@ -73,7 +73,7 @@
         .action-btn:hover { background-color: #1d4ed8; }
 
         .config-panel {
-            display: none; margin-top: 1.5rem; border-top: 1px solid var(--border-color); padding-top: 1.5rem;
+            margin-top: 1.5rem; border-top: 1px solid var(--border-color); padding-top: 1.5rem;
         }
 
         .input-group { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
@@ -83,7 +83,7 @@
             padding: 0.6rem; border-radius: 6px; color: white; font-family: monospace; font-size: 0.9rem;
         }
 
-        .transfer-panel { display: none; margin-top: 1.5rem; border-top: 1px solid var(--border-color); padding-top: 1.5rem; }
+        .transfer-panel { margin-top: 1.5rem; border-top: 1px solid var(--border-color); padding-top: 1.5rem; }
         .file-info { display: flex; justify-content: space-between; font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.5rem; }
         .file-name { color: var(--text-main); font-weight: 500; max-width: 70%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         .progress-bar-bg { background-color: rgba(255, 255, 255, 0.05); border: 1px solid var(--border-color); border-radius: 9999px; height: 8px; width: 100%; overflow: hidden; }
@@ -99,77 +99,28 @@
 </head>
 <body>
 
-    <div class="card">
-        <h1 id="mainTitle">Beam Receiver</h1>
-        <p id="subTitle" class="subtitle">Secure point-to-point payload delivery channel</p>
+    <div class="card" id="controlCard">
+        <h1 id="mainTitle">Beam Operations Center</h1>
+        <p id="subTitle" class="subtitle">Secure point-to-point synchronization node</p>
         
         <div class="status-box">
             <div id="statusIndicator" class="spinner"></div>
-            <div id="statusText" class="status-text">Initialising connection matrices...</div>
+            <div id="statusText" class="status-text">Synchronizing core...</div>
             <button id="actionBtn" class="action-btn">Allocate Local Disk Space</button>
         </div>
 
-        <div id="proxyPanel" class="config-panel">
-            <div class="input-group">
-                <label>Tunnel Forward Target Destination</label>
-                <input type="text" id="proxyTarget" value="https://api.github.com" placeholder="e.g., http://localhost:5000">
-            </div>
-            <div class="input-group">
-                <label>Active Matrix Multiplex Logs</label>
-                <div id="proxyLogs" class="log-box">> Matrix proxy pipeline linked. Awaiting local port hooks...</div>
-            </div>
-        </div>
-
-        <div id="transferPanel" class="transfer-panel">
-            <div class="file-info">
-                <span id="fileName" class="file-name">Mounting volume...</span>
-                <span id="transferProgress">0%</span>
-            </div>
-            <div class="progress-bar-bg">
-                <div id="progressBarFill" class="progress-bar-fill"></div>
-            </div>
-        </div>
+        <!-- PLUGINS WILL BE GENERATED CONDITIONALLY AND ISOLATED -->
     </div>
 
     <script>
-        const statusText = document.getElementById('statusText');
-        const statusIndicator = document.getElementById('statusIndicator');
-        const actionBtn = document.getElementById('actionBtn');
-        const transferPanel = document.getElementById('transferPanel');
-        const proxyPanel = document.getElementById('proxyPanel');
-        const proxyTarget = document.getElementById('proxyTarget');
-        const proxyLogs = document.getElementById('proxyLogs');
-        const fileNameLabel = document.getElementById('fileName');
-        const transferProgressLabel = document.getElementById('transferProgress');
-        const progressBarFill = document.getElementById('progressBarFill');
-
         const urlParams = new URLSearchParams(window.location.search);
         const roomID = urlParams.get('id');
         const opMode = urlParams.get('mode') || 'file';
 
-        let fileWritableStream = null;
-        let receivedBytes = 0;
-        let metadata = null;
-        const proxyBuffers = new Map();
-
-        if (opMode === 'proxy') {
-            document.getElementById('mainTitle').textContent = "Beam Proxy Node";
-            document.getElementById('subTitle').textContent = "Active Layer-4 WebRTC Port Matrix Forwarder";
-        }
-
-        function logProxy(msg) {
-            const el = document.createElement('div');
-            el.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
-            proxyLogs.appendChild(el);
-            proxyLogs.scrollTop = proxyLogs.scrollHeight;
-        }
-
-        function appendBuffer(b1, b2) {
-            const tmp = new Uint8Array(b1.byteLength + b2.byteLength);
-            tmp.set(new Uint8Array(b1), 0);
-            tmp.set(new Uint8Array(b2), b1.byteLength);
-            return tmp;
-        }
+        const card = document.getElementById('controlCard');
+        const statusText = document.getElementById('statusText');
+        const statusIndicator = document.getElementById('statusIndicator');
+        const actionBtn = document.getElementById('actionBtn');
 
         function uiState(text, mode) {
             statusText.textContent = text;
@@ -187,210 +138,246 @@
             }
         }
 
-        async function processHttpRequest(connID, reqState, dc) {
-            if (reqState.completed) return;
-
-            const bytes = reqState.bytes;
-            let headerEnd = -1;
-            for (let i = 0; i < bytes.length - 3; i++) {
-                if (bytes[i] === 13 && bytes[i+1] === 10 && bytes[i+2] === 13 && bytes[i+3] === 10) {
-                    headerEnd = i;
-                    break;
-                }
-            }
-
-            if (headerEnd === -1) return; // Wait for complete headers
-
-            const headerText = new TextDecoder().decode(bytes.subarray(0, headerEnd));
-            const lines = headerText.split('\r\n');
-            const requestLine = lines[0].split(' ');
-            const method = requestLine[0];
-            const path = requestLine[1];
-
-            if (!method || !path) return;
-
-            const headers = {};
-            let contentLength = 0;
-            for (let i = 1; i < lines.length; i++) {
-                const parts = lines[i].split(': ');
-                if (parts.length >= 2) {
-                    const key = parts[0].toLowerCase();
-                    const val = parts.slice(1).join(': ');
-                    headers[key] = val;
-                    if (key === 'content-length') contentLength = parseInt(val, 10);
-                }
-            }
-
-            const totalExpectedLength = headerEnd + 4 + contentLength;
-            if (bytes.length < totalExpectedLength) return; // Wait for complete body payload
-
-            reqState.completed = true;
-            const bodyBytes = bytes.subarray(headerEnd + 4, totalExpectedLength);
-
-            const hostTarget = proxyTarget.value.trim().replace(/\/$/, '');
-            const targetUrl = hostTarget + path;
-            logProxy(`Hook: ${method} -> ${path}`);
-
-            try {
-                const fetchOptions = { method: method, headers: headers };
-                if (method !== 'GET' && method !== 'HEAD' && contentLength > 0) {
-                    fetchOptions.body = bodyBytes;
-                }
-
-                const response = await fetch(targetUrl, fetchOptions);
-                const resBuffer = await response.arrayBuffer();
-
-                let httpResponseString = `HTTP/1.1 ${response.status} ${response.statusText}\r\n`;
-                response.headers.forEach((v, k) => {
-                    httpResponseString += `${k}: ${v}\r\n`;
-                });
-                httpResponseString += `Content-Length: ${resBuffer.byteLength}\r\n`;
-                httpResponseString += `Connection: close\r\n\r\n`;
-
-                const headerBytes = new TextEncoder().encode(httpResponseString);
-                const completePacket = new Uint8Array(5 + headerBytes.byteLength + resBuffer.byteLength);
-                
-                const view = new DataView(completePacket.buffer);
-                view.setUint32(0, connID);
-                view.setUint8(4, 0); // Data payload marker
-                completePacket.set(headerBytes, 5);
-                completePacket.set(new Uint8Array(resBuffer), 5 + headerBytes.byteLength);
-
-                dc.send(completePacket);
-                
-                // Dispatched tracking and atomic closing signature frame
-                const closeFrame = new Uint8Array(5);
-                new DataView(closeFrame.buffer).setUint32(0, connID);
-                closeFrame[4] = 1; // Close signal status
-                dc.send(closeFrame);
-            } catch (err) {
-                logProxy(`Fetch Failure: ${err.message}`);
-                const errPayload = `HTTP/1.1 502 Bad Gateway\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\nProxy Node Mapping Error: ${err.message}`;
-                const errBytes = new TextEncoder().encode(errPayload);
-                const packet = new Uint8Array(5 + errBytes.byteLength);
-                new DataView(packet.buffer).setUint32(0, connID);
-                packet.set(errBytes, 5);
-                dc.send(packet);
-            }
+        function appendBuffer(b1, b2) {
+            const tmp = new Uint8Array(b1.byteLength + b2.byteLength);
+            tmp.set(new Uint8Array(b1), 0);
+            tmp.set(new Uint8Array(b2), b1.byteLength);
+            return tmp;
         }
 
-        async function initEngine() {
-            if (!roomID) {
-                uiState('Configuration Failure: Missing token signature', 'error');
-                return;
-            }
+        if (!roomID) {
+            uiState('Configuration Error: Verification signature missing', 'error');
+        } else if (opMode === 'file') {
+            // ==========================================
+            // STRICT ISOLATED ROUTINE: FILE TRANSPORTER
+            // ==========================================
+            document.getElementById('mainTitle').textContent = "Beam Transporter";
+            document.getElementById('subTitle').textContent = "Direct-to-Disk High Capacity File Delivery Channel";
 
-            try {
-                uiState('Retrieving routing matrices...', 'loading');
+            const panel = document.createElement('div');
+            panel.className = 'transfer-panel';
+            panel.innerHTML = `
+                <div class="file-info">
+                    <span id="fileName" class="file-name">Awaiting Allocation...</span>
+                    <span id="transferProgress">0%</span>
+                </div>
+                <div class="progress-bar-bg"><div id="progressBarFill" class="progress-bar-fill"></div></div>
+            `;
+            card.appendChild(panel);
+
+            let fileWritableStream = null;
+            let receivedBytes = 0;
+            let metadata = null;
+
+            async function initFileEngine() {
+                uiState('Connecting pipeline...', 'loading');
                 const response = await fetch(`https://ntfy.sh/beam_${roomID}_offer/raw?poll=1`);
                 const text = await response.text();
                 const b64Offer = text.split('\n').map(l => l.trim()).filter(l => l !== '')[0];
 
-                if (!b64Offer) throw new Error('Handshake matrix configuration connection expired.');
-
                 const pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
-
-                if (opMode === 'file') {
-                    pc.ondatachannel = (event) => {
-                        const dc = event.channel;
-                        dc.binaryType = 'arraybuffer';
-
-                        dc.onopen = () => {
-                            uiState('Secure connection linked. Disk authorization required.', 'success');
-                            actionBtn.style.display = 'block';
-                            actionBtn.onclick = async () => {
-                                try {
-                                    const fileHandle = await window.showSaveFilePicker({ suggestedName: "beamed_payload" });
-                                    fileWritableStream = await fileHandle.createWritable();
-                                    actionBtn.style.display = 'none';
-                                    uiState('Disk linked. Streaming raw blocks down...', 'loading');
-                                    dc.send("START");
-                                } catch (e) {
-                                    uiState('Disk access denied: ' + e.message, 'error');
-                                }
-                            };
-                        };
-
-                        dc.onmessage = async (e) => {
-                            if (typeof e.data === 'string') {
-                                metadata = JSON.parse(e.data);
-                                fileNameLabel.textContent = metadata.name;
-                                transferPanel.style.display = 'block';
-                                return;
-                            }
-
-                            await fileWritableStream.write(e.data);
-                            receivedBytes += e.data.byteLength;
-
-                            const percent = ((receivedBytes / metadata.size) * 100).toFixed(1);
-                            transferProgressLabel.textContent = `${percent}%`;
-                            progressBarFill.style.width = `${percent}%`;
-
-                            if (receivedBytes >= metadata.size) {
-                                uiState('Payload secure. Stream finalized to disk.', 'success');
-                                progressBarFill.style.backgroundColor = 'var(--accent-emerald)';
-                                await fileWritableStream.close();
-                            }
+                
+                pc.ondatachannel = (event) => {
+                    const dc = event.channel;
+                    dc.binaryType = 'arraybuffer';
+                    dc.onopen = () => {
+                        uiState('Connected. Local drive permission required.', 'success');
+                        actionBtn.style.display = 'block';
+                        actionBtn.onclick = async () => {
+                            try {
+                                const fileHandle = await window.showSaveFilePicker({ suggestedName: "beamed_payload" });
+                                fileWritableStream = await fileHandle.createWritable();
+                                actionBtn.style.display = 'none';
+                                uiState('Disk mapped. Receiving block arrays...', 'loading');
+                                dc.send("START");
+                            } catch (e) { uiState('Mount failed: ' + e.message, 'error'); }
                         };
                     };
-                } else {
-                    proxyPanel.style.display = 'block';
 
-                    pc.ondatachannel = (event) => {
-                        const dc = event.channel;
-                        if (dc.label !== 'beam-proxy') return;
-                        dc.binaryType = 'arraybuffer';
+                    dc.onmessage = async (e) => {
+                        if (typeof e.data === 'string') {
+                            metadata = JSON.parse(e.data);
+                            document.getElementById('fileName').textContent = metadata.name;
+                            panel.style.display = 'block';
+                            return;
+                        }
+                        await fileWritableStream.write(e.data);
+                        receivedBytes += e.data.byteLength;
+                        const percent = ((receivedBytes / metadata.size) * 100).toFixed(1);
+                        document.getElementById('transferProgress').textContent = `${percent}%`;
+                        document.getElementById('progressBarFill').style.width = `${percent}%`;
 
-                        dc.onopen = () => {
-                            uiState('Proxy tunnel routing tables active.', 'success');
-                        };
-
-                        dc.onmessage = async (e) => {
-                            const view = new DataView(e.data);
-                            const connID = view.getUint32(0);
-                            const statusFlag = view.getUint8(4);
-                            const payload = e.data.slice(5);
-
-                            if (statusFlag === 1) {
-                                proxyBuffers.delete(connID);
-                                return;
-                            }
-
-                            if (!proxyBuffers.has(connID)) {
-                                proxyBuffers.set(connID, { bytes: new Uint8Array(0), completed: false });
-                            }
-
-                            let reqState = proxyBuffers.get(connID);
-                            reqState.bytes = appendBuffer(reqState.bytes, new Uint8Array(payload));
-
-                            processHttpRequest(connID, reqState, dc);
-                        };
+                        if (receivedBytes >= metadata.size) {
+                            uiState('Transmission secure. Volume closed.', 'success');
+                            document.getElementById('progressBarFill').style.backgroundColor = 'var(--accent-emerald)';
+                            await fileWritableStream.close();
+                        }
                     };
-                }
+                };
 
                 await pc.setRemoteDescription(new RTCSessionDescription({ type: 'offer', sdp: atob(b64Offer) }));
-                const answer = await pc.createAnswer();
-                await pc.setLocalDescription(answer);
-
-                await new Promise(r => {
-                    if (pc.iceGatheringState === 'complete') r();
-                    else pc.onicegatheringstatechange = () => pc.iceGatheringState === 'complete' && r();
-                });
-
-                await fetch(`https://ntfy.sh/beam_${roomID}_answer`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'text/plain' },
-                    body: btoa(pc.localDescription.sdp)
-                });
-
-                if (opMode !== 'proxy') uiState('Handshake compiled. Waiting for remote stream launch...', 'loading');
-
-            } catch (err) {
-                uiState(err.message, 'error');
+                await pc.setLocalDescription(await pc.createAnswer());
+                await new Promise(r => pc.iceGatheringState === 'complete' ? r() : pc.onicegatheringstatechange = () => pc.iceGatheringState === 'complete' && r());
+                await fetch(`https://ntfy.sh/beam_${roomID}_answer`, { method: 'POST', body: btoa(pc.localDescription.sdp) });
             }
-        }
+            initFileEngine().catch(err => uiState(err.message, 'error'));
 
-        initEngine();
+        } else if (opMode === 'proxy') {
+            // ==========================================
+            // STRICT ISOLATED ROUTINE: SECURE PROXY
+            // ==========================================
+            document.getElementById('mainTitle').textContent = "Beam Proxy Node";
+            document.getElementById('subTitle').textContent = "Layer-4 Multiplexed Port-Mapping Interface";
+
+            const panel = document.createElement('div');
+            panel.className = 'config-panel';
+            panel.innerHTML = `
+                <div class="input-group">
+                    <label>Proxy Forward Destination Target</label>
+                    <input type="text" id="proxyTarget" value="https://api.github.com">
+                </div>
+                <div class="input-group">
+                    <label>Active Multiplex Log Trace</label>
+                    <div id="proxyLogs" class="log-box">> Core proxy logic initialized standalone...</div>
+                </div>
+            `;
+            card.appendChild(panel);
+
+            const proxyTarget = document.getElementById('proxyTarget');
+            const proxyLogs = document.getElementById('proxyLogs');
+            const proxyBuffers = new Map();
+
+            function logProxy(msg) {
+                const el = document.createElement('div');
+                el.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+                proxyLogs.appendChild(el);
+                proxyLogs.scrollTop = proxyLogs.scrollHeight;
+            }
+
+            async function processHttpRequest(connID, reqState, dc) {
+                if (reqState.completed) return;
+                const bytes = reqState.bytes;
+                let headerEnd = -1;
+                for (let i = 0; i < bytes.length - 3; i++) {
+                    if (bytes[i] === 13 && bytes[i+1] === 10 && bytes[i+2] === 13 && bytes[i+3] === 10) {
+                        headerEnd = i; break;
+                    }
+                }
+                if (headerEnd === -1) return;
+
+                const headerText = new TextDecoder().decode(bytes.subarray(0, headerEnd));
+                const lines = headerText.split('\r\n');
+                const requestLine = lines[0].split(' ');
+                const method = requestLine[0];
+                const path = requestLine[1];
+                if (!method || !path) return;
+
+                const headers = {};
+                let contentLength = 0;
+                for (let i = 1; i < lines.length; i++) {
+                    const parts = lines[i].split(': ');
+                    if (parts.length >= 2) {
+                        const key = parts[0].toLowerCase();
+                        const val = parts.slice(1).join(': ');
+                        headers[key] = val;
+                        if (key === 'content-length') contentLength = parseInt(val, 10);
+                    }
+                }
+
+                const totalExpectedLength = headerEnd + 4 + contentLength;
+                if (bytes.length < totalExpectedLength) return;
+
+                reqState.completed = true;
+                const bodyBytes = bytes.subarray(headerEnd + 4, totalExpectedLength);
+
+                // FIXED: Direct custom root status response is now perfectly formatted into a 5-byte multiplexed header frame
+                if (path === '/') {
+                    const payload = `HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nConnection: close\r\n\r\n` + 
+                                    `<html><body style="background:#090d16;color:#f9fafb;font-family:sans-serif;padding:40px;text-align:center;">` +
+                                    `<h1>🚀 Beam Proxy Operating Perfectly</h1><p style="color:#9ca3af;">Layer-4 WebRTC Multi-Tunnel Core Engine Is Operational.</p>` +
+                                    `</body></html>`;
+                    const payloadBytes = new TextEncoder().encode(payload);
+                    const packet = new Uint8Array(5 + payloadBytes.byteLength);
+                    const view = new DataView(packet.buffer);
+                    view.setUint32(0, connID);
+                    view.setUint8(4, 0);
+                    packet.set(payloadBytes, 5);
+                    dc.send(packet);
+
+                    const closeFrame = new Uint8Array(5);
+                    new DataView(closeFrame.buffer).setUint32(0, connID);
+                    closeFrame[4] = 1;
+                    dc.send(closeFrame);
+                    logProxy(`Served root status pipeline successfully [#${connID}]`);
+                    return;
+                }
+
+                const targetUrl = proxyTarget.value.trim().replace(/\/$/, '') + path;
+                logProxy(`Routing: ${method} -> ${path}`);
+
+                try {
+                    const fetchOptions = { method: method, headers: headers };
+                    if (method !== 'GET' && method !== 'HEAD' && contentLength > 0) fetchOptions.body = bodyBytes;
+
+                    const response = await fetch(targetUrl, fetchOptions);
+                    const resBuffer = await response.arrayBuffer();
+
+                    let httpResponseString = `HTTP/1.1 ${response.status} ${response.statusText}\r\n`;
+                    response.headers.forEach((v, k) => { httpResponseString += `${k}: ${v}\r\n`; });
+                    httpResponseString += `Content-Length: ${resBuffer.byteLength}\r\nConnection: close\r\n\r\n`;
+
+                    const headerBytes = new TextEncoder().encode(httpResponseString);
+                    const completePacket = new Uint8Array(5 + headerBytes.byteLength + resBuffer.byteLength);
+                    const view = new DataView(completePacket.buffer);
+                    view.setUint32(0, connID);
+                    view.setUint8(4, 0);
+                    completePacket.set(headerBytes, 5);
+                    completePacket.set(new Uint8Array(resBuffer), 5 + headerBytes.byteLength);
+                    dc.send(completePacket);
+
+                    const closeFrame = new Uint8Array(5);
+                    new DataView(closeFrame.buffer).setUint32(0, connID);
+                    closeFrame[4] = 1;
+                    dc.send(closeFrame);
+                } catch (err) {
+                    logProxy(`Fetch Failure: ${err.message}`);
+                }
+            }
+
+            async function initProxyEngine() {
+                uiState('Mapping core data tunnels...', 'loading');
+                const response = await fetch(`https://ntfy.sh/beam_${roomID}_offer/raw?poll=1`);
+                const text = await response.text();
+                const b64Offer = text.split('\n').map(l => l.trim()).filter(l => l !== '')[0];
+
+                const pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
+                pc.ondatachannel = (event) => {
+                    const dc = event.channel;
+                    if (dc.label !== 'beam-proxy') return;
+                    dc.binaryType = 'arraybuffer';
+                    dc.onopen = () => uiState('Proxy data pipeline open.', 'success');
+                    dc.onmessage = async (e) => {
+                        const view = new DataView(e.data);
+                        const connID = view.getUint32(0);
+                        const statusFlag = view.getUint8(4);
+                        const payload = e.data.slice(5);
+
+                        if (statusFlag === 1) { proxyBuffers.delete(connID); return; }
+                        if (!proxyBuffers.has(connID)) proxyBuffers.set(connID, { bytes: new Uint8Array(0), completed: false });
+
+                        let reqState = proxyBuffers.get(connID);
+                        reqState.bytes = appendBuffer(reqState.bytes, new Uint8Array(payload));
+                        processHttpRequest(connID, reqState, dc);
+                    };
+                };
+
+                await pc.setRemoteDescription(new RTCSessionDescription({ type: 'offer', sdp: atob(b64Offer) }));
+                await pc.setLocalDescription(await pc.createAnswer());
+                await new Promise(r => pc.iceGatheringState === 'complete' ? r() : pc.onicegatheringstatechange = () => pc.iceGatheringState === 'complete' && r());
+                await fetch(`https://ntfy.sh/beam_${roomID}_answer`, { method: 'POST', body: btoa(pc.localDescription.sdp) });
+            }
+            initProxyEngine().catch(err => uiState(err.message, 'error'));
+        }
     </script>
 </body>
 </html>
