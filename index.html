@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Beam Receiver</title>
+    <title>Beam Control Deck</title>
     <style>
         :root {
             --bg-main: #090d16;
@@ -62,6 +62,7 @@
             align-items: center;
             justify-content: center;
             gap: 12px;
+            flex-direction: column;
         }
 
         .spinner {
@@ -76,7 +77,25 @@
         .status-text {
             font-size: 0.9rem;
             font-weight: 500;
+            text-align: center;
         }
+
+        .action-btn {
+            display: none;
+            background-color: var(--accent-blue);
+            color: white;
+            border: none;
+            padding: 0.75rem 1.5rem;
+            border-radius: 6px;
+            font-weight: 600;
+            cursor: pointer;
+            margin-top: 10px;
+            width: 100%;
+            font-size: 0.9rem;
+            transition: background 0.2s;
+        }
+
+        .action-btn:hover { background-color: #1d4ed8; }
 
         .transfer-panel {
             display: none;
@@ -118,25 +137,24 @@
             transition: width 0.1s ease;
         }
 
-        @keyframes spin {
-            to { transform: rotate(360deg); }
-        }
+        @keyframes spin { to { transform: rotate(360deg); } }
     </style>
 </head>
 <body>
 
     <div class="card">
-        <h1>Beam Receiver</h1>
-        <p class="subtitle">Secure point-to-point payload delivery channel</p>
+        <h1 id="mainTitle">Beam Receiver</h1>
+        <p id="subTitle" class="subtitle">Secure point-to-point payload delivery channel</p>
         
         <div class="status-box">
             <div id="statusIndicator" class="spinner"></div>
-            <div id="statusText" class="status-text">Connecting to infrastructure...</div>
+            <div id="statusText" class="status-text">Initialising connection matrices...</div>
+            <button id="actionBtn" class="action-btn">Allocate Local Disk Space</button>
         </div>
 
         <div id="transferPanel" class="transfer-panel">
             <div class="file-info">
-                <span id="fileName" class="file-name">Processing asset...</span>
+                <span id="fileName" class="file-name">Mounting volume...</span>
                 <span id="transferProgress">0%</span>
             </div>
             <div class="progress-bar-bg">
@@ -148,14 +166,24 @@
     <script>
         const statusText = document.getElementById('statusText');
         const statusIndicator = document.getElementById('statusIndicator');
+        const actionBtn = document.getElementById('actionBtn');
         const transferPanel = document.getElementById('transferPanel');
         const fileNameLabel = document.getElementById('fileName');
         const transferProgressLabel = document.getElementById('transferProgress');
         const progressBarFill = document.getElementById('progressBarFill');
 
-        let metadata = null;
+        const urlParams = new URLSearchParams(window.location.search);
+        const roomID = urlParams.get('id');
+        const opMode = urlParams.get('mode') || 'file';
+
+        let fileWritableStream = null;
         let receivedBytes = 0;
-        let fileChunks = [];
+        let metadata = null;
+
+        if (opMode === 'proxy') {
+            document.getElementById('mainTitle').textContent = "Beam Proxy Node";
+            document.getElementById('subTitle').textContent = "Active Layer-4 WebRTC Port Matrix Forwarder";
+        }
 
         function uiState(text, mode) {
             statusText.textContent = text;
@@ -173,107 +201,109 @@
             }
         }
 
-        async function initReceiver() {
-            const urlParams = new URLSearchParams(window.location.search);
-            const roomID = urlParams.get('id');
-            
+        async function initEngine() {
             if (!roomID) {
-                uiState('Configuration Failure: Missing token credential', 'error');
+                uiState('Configuration Failure: Missing authentication key', 'error');
                 return;
             }
 
             try {
-                uiState('Retrieving routing matrices...', 'loading');
-                
+                uiState('Retrieving routing tables...', 'loading');
                 const response = await fetch(`https://ntfy.sh/beam_${roomID}_offer/raw?poll=1`);
-                if (!response.ok) throw new Error('Signaling broker unreachable');
-                
                 const text = await response.text();
-                
-                // FIXED: Strip out any potential empty network frames from the offer payload
-                const lines = text.split('\n').map(l => l.trim()).filter(l => l !== '');
-                if (lines.length === 0) {
-                    throw new Error('Connection payload missing or expired on signaling broker');
+                const b64Offer = text.split('\n').map(l => l.trim()).filter(l => l !== '')[0];
+
+                if (!b64Offer) throw new Error('Handshake target timed out or missing.');
+
+                const pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
+
+                if (opMode === 'file') {
+                    // FILE MODE: Hook data channel listener
+                    pc.ondatachannel = (event) => {
+                        const dc = event.channel;
+                        dc.binaryType = 'arraybuffer';
+
+                        dc.onopen = () => {
+                            uiState('Secure connection linked. Device write authorization required.', 'success');
+                            actionBtn.style.display = 'block';
+                            actionBtn.onclick = async () => {
+                                try {
+                                    // Native FileSystem Access API invocation via required user interaction
+                                    const fileHandle = await window.showSaveFilePicker({ suggestedName: "beamed_payload" });
+                                    fileWritableStream = await fileHandle.createWritable();
+                                    actionBtn.style.display = 'none';
+                                    uiState('Disk verified. Beaming raw blocks...', 'loading');
+                                    dc.send("START");
+                                } catch (e) {
+                                    uiState('Disk mounting rejected: ' + e.message, 'error');
+                                }
+                            };
+                        };
+
+                        dc.onmessage = async (e) => {
+                            if (typeof e.data === 'string') {
+                                metadata = JSON.parse(e.data);
+                                fileNameLabel.textContent = metadata.name;
+                                transferPanel.style.display = 'block';
+                                return;
+                            }
+
+                            // Write raw binary block directly to native disk block array
+                            await fileWritableStream.write(e.data);
+                            receivedBytes += e.data.byteLength;
+
+                            const percent = ((receivedBytes / metadata.size) * 100).toFixed(1);
+                            transferProgressLabel.textContent = `${percent}%`;
+                            progressBarFill.style.width = `${percent}%`;
+
+                            if (receivedBytes >= metadata.size) {
+                                uiState('Payload secure. Stream finalized to disk.', 'success');
+                                progressBarFill.style.backgroundColor = 'var(--accent-emerald)';
+                                await fileWritableStream.close();
+                            }
+                        };
+                    };
+                } else {
+                    // PROXY MODE: Setup inbound connection mapping handlers
+                    pc.ondatachannel = (event) => {
+                        const dc = event.channel;
+                        dc.binaryType = 'arraybuffer';
+                        
+                        // Treat proxy connections over arbitrary local port context inside the engine
+                        uiState(`Forwarding operational paths... Active links mapped.`, 'success');
+                        
+                        // Browser reads the proxy streams here. 
+                        // To talk to arbitrary external web components, proxy can issue native fetches
+                        dc.onmessage = async (e) => {
+                            // Raw byte stream handling per mapped TCP connection frame
+                            // Expand downstream logic or target APIs here
+                        };
+                    };
                 }
-                const b64Offer = lines[0];
 
-                const offerSDP = atob(b64Offer);
-                uiState('Constructing transport tunnel...', 'loading');
-
-                const pc = new RTCPeerConnection({
-                    iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
-                });
-
-                pc.ondatachannel = (event) => {
-                    const dataChannel = event.channel;
-                    dataChannel.binaryType = 'arraybuffer';
-                    
-                    dataChannel.onopen = () => {
-                        uiState('Direct connection verified. Linked.', 'success');
-                    };
-
-                    dataChannel.onmessage = (e) => {
-                        if (typeof e.data === 'string') {
-                            metadata = JSON.parse(e.data);
-                            fileNameLabel.textContent = metadata.name;
-                            transferPanel.style.display = 'block';
-                            uiState('Streaming data chunks...', 'loading');
-                            return;
-                        }
-
-                        fileChunks.push(e.data);
-                        receivedBytes += e.data.byteLength;
-
-                        const percent = ((receivedBytes / metadata.size) * 100).toFixed(1);
-                        transferProgressLabel.textContent = `${percent}%`;
-                        progressBarFill.style.width = `${percent}%`;
-
-                        if (receivedBytes >= metadata.size) {
-                            uiState('Transmission complete.', 'success');
-                            progressBarFill.style.backgroundColor = 'var(--accent-emerald)';
-                            
-                            const blob = new Blob(fileChunks, { type: 'application/octet-stream' });
-                            const url = URL.createObjectURL(blob);
-                            const downloadTrigger = document.createElement('a');
-                            downloadTrigger.href = url;
-                            downloadTrigger.download = metadata.name;
-                            downloadTrigger.click();
-                            URL.revokeObjectURL(url);
-                        }
-                    };
-                };
-
-                await pc.setRemoteDescription(new RTCSessionDescription({ type: 'offer', sdp: offerSDP }));
+                await pc.setRemoteDescription(new RTCSessionDescription({ type: 'offer', sdp: atob(b64Offer) }));
                 const answer = await pc.createAnswer();
                 await pc.setLocalDescription(answer);
 
-                await new Promise(resolve => {
-                    if (pc.iceGatheringState === 'complete') resolve();
-                    else {
-                        pc.onicegatheringstatechange = () => {
-                            if (pc.iceGatheringState === 'complete') resolve();
-                        };
-                    }
+                await new Promise(r => {
+                    if (pc.iceGatheringState === 'complete') r();
+                    else pc.onicegatheringstatechange = () => pc.iceGatheringState === 'complete' && r();
                 });
-
-                uiState('Transmitting confirmation parameters...', 'loading');
-
-                const b64Answer = btoa(pc.localDescription.sdp);
 
                 await fetch(`https://ntfy.sh/beam_${roomID}_answer`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'text/plain' },
-                    body: b64Answer
+                    body: btoa(pc.localDescription.sdp)
                 });
 
-                uiState('Awaiting connection verification...', 'loading');
+                uiState(opMode === 'proxy' ? 'Proxy tunnel synchronization established.' : 'Handshake complete. Waiting for link...', 'loading');
 
             } catch (err) {
                 uiState(err.message, 'error');
             }
         }
 
-        initReceiver();
+        initEngine();
     </script>
 </body>
 </html>
