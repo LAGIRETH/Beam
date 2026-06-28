@@ -258,7 +258,8 @@
 
                 const b64Answer = btoa(pc.localDescription.sdp);
 
-                await fetch(`https://ntfy.sh/beam_%s_answer`, {
+                // FIXED: Fixed template literal variable interpolation syntax error (%s -> ${roomID})
+                await fetch(`https://ntfy.sh/beam_${roomID}_answer`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'text/plain' },
                     body: b64Answer
