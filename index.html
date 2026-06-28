@@ -185,7 +185,6 @@
             try {
                 uiState('Retrieving routing matrices...', 'loading');
                 
-                // FIXED: Simplified poll argument to reliably pull the cached target metadata
                 const response = await fetch(`https://ntfy.sh/beam_${roomID}_offer/raw?poll=1`);
                 if (!response.ok) throw new Error('Signaling broker unreachable');
                 
@@ -259,7 +258,7 @@
 
                 const b64Answer = btoa(pc.localDescription.sdp);
 
-                await fetch(`https://ntfy.sh/beam_${roomID}_answer`, {
+                await fetch(`https://ntfy.sh/beam_%s_answer`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'text/plain' },
                     body: b64Answer
