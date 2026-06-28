@@ -102,7 +102,7 @@
     <div class="card" id="controlCard">
         <h1 id="mainTitle">Beam Operations Center</h1>
         <p id="subTitle" class="subtitle">Secure point-to-point synchronization node</p>
-        
+         
         <div class="status-box">
             <div id="statusIndicator" class="spinner"></div>
             <div id="statusText" class="status-text">Synchronizing core...</div>
@@ -290,7 +290,21 @@
                 reqState.completed = true;
                 const bodyBytes = bytes.subarray(headerEnd + 4, totalExpectedLength);
 
-                // FIXED: Direct custom root status response is now perfectly formatted into a 5-byte multiplexed header frame
+                // FIX: Intercept automated favicon noise immediately to prevent socket clogging
+                if (path === '/favicon.ico') {
+                    const payloadBytes = new TextEncoder().encode("HTTP/1.1 204 No Content\r\nConnection: close\r\n\r\n");
+                    const packet = new Uint8Array(5 + payloadBytes.byteLength);
+                    new DataView(packet.buffer).setUint32(0, connID);
+                    packet.set(payloadBytes, 5);
+                    dc.send(packet);
+
+                    const closeFrame = new Uint8Array(5);
+                    new DataView(closeFrame.buffer).setUint32(0, connID);
+                    closeFrame[4] = 1;
+                    dc.send(closeFrame);
+                    return;
+                }
+
                 if (path === '/') {
                     const payload = `HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nConnection: close\r\n\r\n` + 
                                     `<html><body style="background:#090d16;color:#f9fafb;font-family:sans-serif;padding:40px;text-align:center;">` +
@@ -341,6 +355,20 @@
                     dc.send(closeFrame);
                 } catch (err) {
                     logProxy(`Fetch Failure: ${err.message}`);
+                    // FIX: Gracefully notify backend listener of endpoint connection drop
+                    try {
+                        const failPayload = `HTTP/1.1 502 Bad Gateway\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\nProxy Error: ${err.message}`;
+                        const failBytes = new TextEncoder().encode(failPayload);
+                        const packet = new Uint8Array(5 + failBytes.byteLength);
+                        new DataView(packet.buffer).setUint32(0, connID);
+                        packet.set(failBytes, 5);
+                        dc.send(packet);
+
+                        const closeFrame = new Uint8Array(5);
+                        new DataView(closeFrame.buffer).setUint32(0, connID);
+                        closeFrame[4] = 1;
+                        dc.send(closeFrame);
+                    } catch (e) {}
                 }
             }
 
