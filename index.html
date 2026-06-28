@@ -35,23 +35,12 @@
             padding: 2.5rem;
             border-radius: 12px;
             width: 100%;
-            max-width: 480px;
+            max-width: 520px;
             box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.5);
         }
 
-        h1 {
-            font-size: 1.35rem;
-            font-weight: 600;
-            margin: 0 0 0.25rem 0;
-            text-align: center;
-        }
-
-        p.subtitle {
-            color: var(--text-muted);
-            font-size: 0.875rem;
-            margin: 0 0 2rem 0;
-            text-align: center;
-        }
+        h1 { font-size: 1.35rem; font-weight: 600; margin: 0 0 0.25rem 0; text-align: center; }
+        p.subtitle { color: var(--text-muted); font-size: 0.875rem; margin: 0 0 2rem 0; text-align: center; }
 
         .status-box {
             background-color: rgba(0, 0, 0, 0.2);
@@ -74,67 +63,35 @@
             animation: spin 0.8s linear infinite;
         }
 
-        .status-text {
-            font-size: 0.9rem;
-            font-weight: 500;
-            text-align: center;
-        }
+        .status-text { font-size: 0.9rem; font-weight: 500; text-align: center; }
 
         .action-btn {
-            display: none;
-            background-color: var(--accent-blue);
-            color: white;
-            border: none;
-            padding: 0.75rem 1.5rem;
-            border-radius: 6px;
-            font-weight: 600;
-            cursor: pointer;
-            margin-top: 10px;
-            width: 100%;
-            font-size: 0.9rem;
-            transition: background 0.2s;
+            display: none; background-color: var(--accent-blue); color: white; border: none;
+            padding: 0.75rem 1.5rem; border-radius: 6px; font-weight: 600; cursor: pointer;
+            margin-top: 10px; width: 100%; font-size: 0.9rem; transition: background 0.2s;
         }
-
         .action-btn:hover { background-color: #1d4ed8; }
 
-        .transfer-panel {
-            display: none;
-            margin-top: 1.5rem;
-            border-top: 1px solid var(--border-color);
-            padding-top: 1.5rem;
+        .config-panel {
+            display: none; margin-top: 1.5rem; border-top: 1px solid var(--border-color); padding-top: 1.5rem;
         }
 
-        .file-info {
-            display: flex;
-            justify-content: space-between;
-            font-size: 0.85rem;
-            color: var(--text-muted);
-            margin-bottom: 0.5rem;
+        .input-group { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
+        .input-group label { font-size: 0.8rem; color: var(--text-muted); font-weight: 500; }
+        .input-group input {
+            background-color: rgba(0, 0, 0, 0.3); border: 1px solid var(--border-color);
+            padding: 0.6rem; border-radius: 6px; color: white; font-family: monospace; font-size: 0.9rem;
         }
 
-        .file-name {
-            color: var(--text-main);
-            font-weight: 500;
-            max-width: 70%;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-        }
+        .transfer-panel { display: none; margin-top: 1.5rem; border-top: 1px solid var(--border-color); padding-top: 1.5rem; }
+        .file-info { display: flex; justify-content: space-between; font-size: 0.85rem; color: var(--text-muted); margin-bottom: 0.5rem; }
+        .file-name { color: var(--text-main); font-weight: 500; max-width: 70%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .progress-bar-bg { background-color: rgba(255, 255, 255, 0.05); border: 1px solid var(--border-color); border-radius: 9999px; height: 8px; width: 100%; overflow: hidden; }
+        .progress-bar-fill { background-color: var(--accent-blue); height: 100%; width: 0%; transition: width 0.1s ease; }
 
-        .progress-bar-bg {
-            background-color: rgba(255, 255, 255, 0.05);
-            border: 1px solid var(--border-color);
-            border-radius: 9999px;
-            height: 8px;
-            width: 100%;
-            overflow: hidden;
-        }
-
-        .progress-bar-fill {
-            background-color: var(--accent-blue);
-            height: 100%;
-            width: 0%;
-            transition: width 0.1s ease;
+        .log-box {
+            background-color: rgba(0, 0, 0, 0.4); border: 1px solid var(--border-color); border-radius: 6px;
+            padding: 10px; height: 120px; overflow-y: auto; font-family: monospace; font-size: 0.75rem; color: #34d399; margin-top: 10px;
         }
 
         @keyframes spin { to { transform: rotate(360deg); } }
@@ -152,6 +109,19 @@
             <button id="actionBtn" class="action-btn">Allocate Local Disk Space</button>
         </div>
 
+        <!-- PROXY SETTINGS CONTROLS -->
+        <div id="proxyPanel" class="config-panel">
+            <div class="input-group">
+                <label>Tunnel Forward Target Destination Target</label>
+                <input type="text" id="proxyTarget" value="https://api.github.com" placeholder="e.g., http://localhost:5000">
+            </div>
+            <div class="input-group">
+                <label>Active Matrix Transmission Logs</label>
+                <div id="proxyLogs" class="log-box">> Proxy pipeline listening for inbound local port hooks...</div>
+            </div>
+        </div>
+
+        <!-- FILE TRANSFER PROGRESS CONTROLS -->
         <div id="transferPanel" class="transfer-panel">
             <div class="file-info">
                 <span id="fileName" class="file-name">Mounting volume...</span>
@@ -168,6 +138,9 @@
         const statusIndicator = document.getElementById('statusIndicator');
         const actionBtn = document.getElementById('actionBtn');
         const transferPanel = document.getElementById('transferPanel');
+        const proxyPanel = document.getElementById('proxyPanel');
+        const proxyTarget = document.getElementById('proxyTarget');
+        const proxyLogs = document.getElementById('proxyLogs');
         const fileNameLabel = document.getElementById('fileName');
         const transferProgressLabel = document.getElementById('transferProgress');
         const progressBarFill = document.getElementById('progressBarFill');
@@ -183,6 +156,13 @@
         if (opMode === 'proxy') {
             document.getElementById('mainTitle').textContent = "Beam Proxy Node";
             document.getElementById('subTitle').textContent = "Active Layer-4 WebRTC Port Matrix Forwarder";
+        }
+
+        function logProxy(msg) {
+            const el = document.createElement('div');
+            el.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+            proxyLogs.appendChild(el);
+            proxyLogs.scrollTop = proxyLogs.scrollHeight;
         }
 
         function uiState(text, mode) {
@@ -218,7 +198,6 @@
                 const pc = new RTCPeerConnection({ iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] });
 
                 if (opMode === 'file') {
-                    // FILE MODE: Hook data channel listener
                     pc.ondatachannel = (event) => {
                         const dc = event.channel;
                         dc.binaryType = 'arraybuffer';
@@ -228,7 +207,6 @@
                             actionBtn.style.display = 'block';
                             actionBtn.onclick = async () => {
                                 try {
-                                    // Native FileSystem Access API invocation via required user interaction
                                     const fileHandle = await window.showSaveFilePicker({ suggestedName: "beamed_payload" });
                                     fileWritableStream = await fileHandle.createWritable();
                                     actionBtn.style.display = 'none';
@@ -248,7 +226,6 @@
                                 return;
                             }
 
-                            // Write raw binary block directly to native disk block array
                             await fileWritableStream.write(e.data);
                             receivedBytes += e.data.byteLength;
 
@@ -264,19 +241,57 @@
                         };
                     };
                 } else {
-                    // PROXY MODE: Setup inbound connection mapping handlers
+                    // FIXED: Full client-side reverse-proxy orchestration system
+                    proxyPanel.style.display = 'block';
+                    
                     pc.ondatachannel = (event) => {
                         const dc = event.channel;
                         dc.binaryType = 'arraybuffer';
                         
-                        // Treat proxy connections over arbitrary local port context inside the engine
-                        uiState(`Forwarding operational paths... Active links mapped.`, 'success');
-                        
-                        // Browser reads the proxy streams here. 
-                        // To talk to arbitrary external web components, proxy can issue native fetches
                         dc.onmessage = async (e) => {
-                            // Raw byte stream handling per mapped TCP connection frame
-                            // Expand downstream logic or target APIs here
+                            const rawRequest = new TextDecoder().decode(e.data);
+                            const firstLine = rawRequest.split('\r\n')[0];
+                            const parts = firstLine.split(' ');
+                            const method = parts[0];
+                            const path = parts[1];
+
+                            if (!method || !path) return;
+                            logProxy(`Inbound Hook: ${method} -> ${path}`);
+
+                            // Serve internal configuration loop if hitting root directly
+                            if (path === '/') {
+                                const payload = `HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nConnection: close\r\n\r\n` + 
+                                                `<html><body style="background:#090d16;color:#f9fafb;font-family:sans-serif;padding:30px;text-align:center;">` +
+                                                `<h1>🚀 Beam Proxy Active</h1><p style="color:#9ca3af;">P2P pipeline functioning correctly across WebRTC.</p>` +
+                                                `</body></html>`;
+                                dc.send(new TextEncoder().encode(payload));
+                                return;
+                            }
+
+                            // Route request out to targeted server interface
+                            const endpoint = proxyTarget.value.trim().replace(/\/$/, '') + path;
+                            try {
+                                const fetchRes = await fetch(endpoint, { method: method });
+                                const bodyBuffer = await fetchRes.arrayBuffer();
+
+                                let responseHeader = `HTTP/1.1 ${fetchRes.status} ${fetchRes.statusText}\r\n`;
+                                responseHeader += `Content-Length: ${bodyBuffer.byteLength}\r\n`;
+                                responseHeader += `Content-Type: ${fetchRes.headers.get('content-type') || 'text/plain'}\r\n`;
+                                responseHeader += `Access-Control-Allow-Origin: *\r\n`;
+                                responseHeader += `Connection: close\r\n\r\n`;
+
+                                const headerBytes = new TextEncoder().encode(responseHeader);
+                                const combinedPacket = new Uint8Array(headerBytes.byteLength + bodyBuffer.byteLength);
+                                combinedPacket.set(headerBytes, 0);
+                                combinedPacket.set(new Uint8Array(bodyBuffer), headerBytes.byteLength);
+
+                                dc.send(combinedPacket);
+                                logProxy(`Outbound Response Success: Status ${fetchRes.status}`);
+                            } catch (err) {
+                                const errPayload = `HTTP/1.1 502 Bad Gateway\r\nContent-Type: text/plain\r\nConnection: close\r\n\r\nProxy Target Connect Error: ${err.message}`;
+                                dc.send(new TextEncoder().encode(errPayload));
+                                logProxy(`Proxy Forward Error: ${err.message}`);
+                            }
                         };
                     };
                 }
@@ -296,7 +311,7 @@
                     body: btoa(pc.localDescription.sdp)
                 });
 
-                uiState(opMode === 'proxy' ? 'Proxy tunnel synchronization established.' : 'Handshake complete. Waiting for link...', 'loading');
+                uiState(opMode === 'proxy' ? 'Proxy node operational. Awaiting hooks...' : 'Handshake complete. Waiting for link...', 'success');
 
             } catch (err) {
                 uiState(err.message, 'error');
