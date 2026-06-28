@@ -78,7 +78,6 @@
             font-weight: 500;
         }
 
-        /* Progress Module UI */
         .transfer-panel {
             display: none;
             margin-top: 1.5rem;
@@ -186,12 +185,26 @@
             try {
                 uiState('Retrieving routing matrices...', 'loading');
                 
-                const response = await fetch(`https://ntfy.sh/beam_${roomID}_offer/raw`);
-                if (!response.ok) throw new Error('Signaling handshake server offline');
-                
-                const offerSDP = await response.text();
-                if (!offerSDP || offerSDP.trim() === "") {
-                    throw new Error('Connection payload missing or expired');
+                // FIXED: Requesting with explicit poll constraints to fetch the cached configuration instantly
+                let offerSDP = "";
+                for (let i = 0; i < 10; i++) {
+                    try {
+                        const response = await fetch(`https://ntfy.sh/beam_${roomID}_offer/raw?poll=1&since=latest`);
+                        if (response.ok) {
+                            const text = await response.text();
+                            if (text && text.trim() !== "") {
+                                offerSDP = text.trim();
+                                break;
+                            }
+                        }
+                    } catch (e) {
+                        console.log("Retrying offer query step...");
+                    }
+                    await new Promise(r => setTimeout(r, 1000));
+                }
+
+                if (!offerSDP) {
+                    throw new Error('Connection payload missing or expired on signaling broker');
                 }
 
                 uiState('Constructing transport tunnel...', 'loading');
@@ -209,7 +222,6 @@
                     };
 
                     dataChannel.onmessage = (e) => {
-                        // Text message signals metadata packet
                         if (typeof e.data === 'string') {
                             metadata = JSON.parse(e.data);
                             fileNameLabel.textContent = metadata.name;
@@ -218,11 +230,9 @@
                             return;
                         }
 
-                        // Binary message signals asset data packet
                         fileChunks.push(e.data);
                         receivedBytes += e.data.byteLength;
 
-                        // Calculate and render progress metrics
                         const percent = ((receivedBytes / metadata.size) * 100).toFixed(1);
                         transferProgressLabel.textContent = `${percent}%`;
                         progressBarFill.style.width = `${percent}%`;
@@ -231,7 +241,6 @@
                             uiState('Transmission complete.', 'success');
                             progressBarFill.style.backgroundColor = 'var(--accent-emerald)';
                             
-                            // Compile chunk array into a virtual asset download trigger
                             const blob = new Blob(fileChunks, { type: 'application/octet-stream' });
                             const url = URL.createObjectURL(blob);
                             const downloadTrigger = document.createElement('a');
