@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Beam Receiver</title>
+    <style>
+        body {
+            font-family: 'Courier New', monospace;
+            background: #111;
+            color: #0f0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+        }
+        .container {
+            border: 2px solid #0f0;
+            padding: 2rem;
+            border-radius: 10px;
+            max-width: 800px;
+            box-shadow: 0 0 15px #0f0;
+        }
+        h1 { margin-top: 0; }
+        textarea {
+            width: 100%;
+            height: 200px;
+            background: #222;
+            color: #0f0;
+            border: 1px solid #0f0;
+            font-family: monospace;
+            padding: 10px;
+            margin: 10px 0;
+        }
+        button {
+            background: #0f0;
+            color: #111;
+            border: none;
+            padding: 10px 20px;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 16px;
+        }
+        button:hover { background: #0a0; }
+        .status { margin: 1rem 0; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📡 BEAM RECEIVER</h1>
+        <div id="status" class="status">Initializing...</div>
+        
+        <div id="answerSection" style="display: none;">
+            <p>Copy this Answer and send it back to your friend:</p>
+            <textarea id="answerText" readonly></textarea>
+            <button onclick="copyAnswer()">Copy Answer</button>
+        </div>
+    </div>
+
+    <script>
+        // Decompress the Base64+Gzip encoded SDP
+        function decompressSDP(compressed) {
+            const binaryString = atob(compressed);
+            const bytes = new Uint8Array(binaryString.length);
+            for (let i = 0; i < binaryString.length; i++) {
+                bytes[i] = binaryString.charCodeAt(i);
+            }
+            
+            const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'));
+            return new Response(stream).text();
+        }
+
+        async function initReceiver() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const compressedOffer = urlParams.get('offer');
+            
+            if (!compressedOffer) {
+                document.getElementById('status').textContent = 'ERROR: No offer found in URL';
+                return;
+            }
+
+            document.getElementById('status').textContent = 'Decompressing offer...';
+
+            try {
+                // Decompress the offer
+                const offerSDP = await decompressSDP(compressedOffer);
+                document.getElementById('status').textContent = 'Offer received. Establishing P2P connection...';
+
+                // Create WebRTC Peer Connection
+                const config = {
+                    iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+                };
+                
+                const pc = new RTCPeerConnection(config);
+
+                // Create Answer
+                await pc.setRemoteDescription({ type: 'offer', sdp: offerSDP });
+                const answer = await pc.createAnswer();
+                await pc.setLocalDescription(answer);
+
+                // Wait for ICE gathering to complete
+                await new Promise(resolve => {
+                    if (pc.iceGatheringState === 'complete') {
+                        resolve();
+                    } else {
+                        pc.onicegatheringstatechange = () => {
+                            if (pc.iceGatheringState === 'complete') resolve();
+                        };
+                    }
+                });
+
+                // Compress the answer
+                const answerSDP = pc.localDescription.sdp;
+                const compressedAnswer = await compressSDP(answerSDP);
+
+                // Display the answer
+                document.getElementById('answerText').value = compressedAnswer;
+                document.getElementById('answerSection').style.display = 'block';
+                document.getElementById('status').textContent = '✅ P2P Connection Ready! Send this answer back.';
+
+            } catch (err) {
+                document.getElementById('status').textContent = 'ERROR: ' + err.message;
+                console.error(err);
+            }
+        }
+
+        // Compress SDP to Base64+Gzip
+        async function compressSDP(sdp) {
+            const blob = new Blob([sdp]);
+            const compressedStream = blob.stream().pipeThrough(new CompressionStream('gzip'));
+            const compressedBlob = await new Response(compressedStream).blob();
+            const arrayBuffer = await compressedBlob.arrayBuffer();
+            const binaryString = String.fromCharCode.apply(null, new Uint8Array(arrayBuffer));
+            return btoa(binaryString);
+        }
+
+        function copyAnswer() {
+            const textarea = document.getElementById('answerText');
+            textarea.select();
+            document.execCommand('copy');
+            alert('Answer copied to clipboard!');
+        }
+
+        // Initialize when page loads
+        initReceiver();
+    </script>
+</body>
+</html>
