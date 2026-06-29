@@ -1,8 +1,11 @@
-package main
+package main 
 
 import (
 	"context"
+	"crypto/aes"
+	"crypto/cipher"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/hex"
@@ -21,6 +24,7 @@ import (
 	"time"
 
 	"github.com/pion/webrtc/v4"
+	"golang.org/x/crypto/pbkdf2"
 )
 
 type FileMetadata struct {
@@ -80,7 +84,9 @@ func cleanup() {
 }
 
 func generateRoomID() string {
-	b := make([]byte, 4)
+	// SECURED: Increased from 4 bytes to 16 bytes (128 bits of entropy) 
+	// to prevent brute-force attacks on the ntfy.sh signaling server.
+	b := make([]byte, 16)
 	_, err := rand.Read(b)
 	if err != nil {
 		panic(fmt.Sprintf("Failed to generate random room ID: %v", err))
@@ -142,11 +148,11 @@ func calculateETA(sent, total int64, elapsed float64) string {
 
 func main() {
 	fmt.Println("╔════════════════════════════════════════════════════════════╗")
-	fmt.Println("║         █ BEAM SECURE MATRIX CORE V1.0 █                  ║")
+	fmt.Println("║         █ BEAM SECURE MATRIX CORE V1.1 █                  ║")
 	fmt.Println("║      Decentralized P2P Data Transport Protocol            ║")
 	fmt.Println("╚════════════════════════════════════════════════════════════╝")
 	fmt.Println()
-	fmt.Println("[1] 📦 File Beam Transporter")
+	fmt.Println("[1] 📦 File Beam Transporter (Zero-Knowledge E2EE)")
 	fmt.Println("    → Transfer files directly to browser storage")
 	fmt.Println()
 	fmt.Println("[2] 🌐 Secure Proxy Tunnel Interface")
@@ -194,6 +200,35 @@ func runFileBeam() {
 	fmt.Printf("[INFO] Target file: %s\n", filepath.Base(filePath))
 	fmt.Printf("[INFO] File size: %.2f MB\n", float64(fileInfo.Size())/1024/1024)
 
+	// --- NEW: Password Prompt and AES-256-GCM Cipher Initialization ---
+	fmt.Println("\n┌─ ENCRYPTION PROTOCOL ─────────────────────────────────────────┐")
+	fmt.Print("│ Enter a strong password to encrypt the file payload:\n│ > ")
+	var password string
+	fmt.Scanln(&password)
+	if password == "" {
+		fmt.Println("[ERROR] Password cannot be empty. Aborting.")
+		return
+	}
+	
+	// Derive a 32-byte AES-256 key from the password using PBKDF2
+	// The salt MUST exactly match the salt used in the frontend JavaScript.
+	salt := []byte("beam-secure-salt-2024")
+	key := pbkdf2.Key([]byte(password), salt, 100000, 32, sha256.New)
+
+	block, errAes := aes.NewCipher(key)
+	if errAes != nil {
+		fmt.Printf("[ERROR] Cipher initialization failed: %v\n", errAes)
+		return
+	}
+	gcm, errGcm := cipher.NewGCM(block)
+	if errGcm != nil {
+		fmt.Printf("[ERROR] GCM initialization failed: %v\n", errGcm)
+		return
+	}
+	fmt.Println("│ ✓ AES-256-GCM Encryption Engine Armed and Ready.")
+	fmt.Println("└─────────────────────────────────────────────────────────────┘")
+	// ----------------------------------------------------------------------
+
 	roomID := generateRoomID()
 	fmt.Printf("[INFO] Generated room ID: %s\n", roomID)
 
@@ -234,7 +269,7 @@ func runFileBeam() {
 	dataChannel.OnMessage(func(msg webrtc.DataChannelMessage) {
 		if string(msg.Data) == "START" {
 			fmt.Println("\n[SYSTEM] ✓ Disk allocated by remote peer")
-			fmt.Println("[SYSTEM] Initiating payload stream...")
+			fmt.Println("[SYSTEM] Initiating encrypted payload stream...")
 
 			meta := FileMetadata{Name: filepath.Base(filePath), Size: fileInfo.Size()}
 			metaBytes, err := json.Marshal(meta)
@@ -255,25 +290,40 @@ func runFileBeam() {
 			}
 			defer file.Close()
 
-			// FIXED: Use smaller chunks and direct polling instead of channel-based flow control
-			buffer := make([]byte, 32*1024) // Reduced to 32KB chunks for smoother flow
+			// SECURED: Reduced to 16KB chunks. 
+			// This ensures that when we add the 12-byte nonce and 16-byte auth tag, 
+			// the total packet size stays safely under browser WebRTC limits.
+			buffer := make([]byte, 16*1024) 
 			startTime := time.Now()
 			totalSent := int64(0)
 			lastProgressUpdate := time.Now()
 
-			fmt.Println("\n[PROGRESS] Starting transfer...")
+			fmt.Println("\n[PROGRESS] Starting encrypted transfer...")
 
 			for {
 				n, err := file.Read(buffer)
 				if n > 0 {
-					// FIXED: Direct polling of BufferedAmount instead of channel-based flow control
+					// 1. Generate a unique 12-byte Nonce (IV) for this specific chunk
+					nonce := make([]byte, gcm.NonceSize())
+					if _, errNonce := io.ReadFull(rand.Reader, nonce); errNonce != nil {
+						fmt.Printf("\n[ERROR] Nonce generation failed: %v\n", errNonce)
+						return
+					}
+
+					// 2. Encrypt the chunk. 
+					// gcm.Seal automatically appends the 16-byte auth tag, and we prepend the nonce.
+					// Final packet format: [12-byte Nonce] + [Encrypted Data] + [16-byte Auth Tag]
+					encryptedChunk := gcm.Seal(nonce, nonce, buffer[:n], nil)
+
+					// 3. Direct polling of BufferedAmount instead of channel-based flow control
 					// Wait if buffer is getting full (above 512KB)
 					for dataChannel.BufferedAmount() > uint64(maxBufferSize) {
 						time.Sleep(10 * time.Millisecond)
 					}
 
-					if errSend := dataChannel.Send(buffer[:n]); errSend != nil {
-						fmt.Printf("\n[ERROR] Failed to send data: %v\n", errSend)
+					// 4. Send the ENCRYPTED chunk over the WebRTC data channel
+					if errSend := dataChannel.Send(encryptedChunk); errSend != nil {
+						fmt.Printf("\n[ERROR] Failed to send encrypted data: %v\n", errSend)
 						return
 					}
 
@@ -284,7 +334,7 @@ func runFileBeam() {
 						elapsed := time.Since(startTime).Seconds()
 						speed := float64(totalSent) / elapsed / 1024 / 1024
 
-						fmt.Printf("\r[PROGRESS] %.1f%% | %.2f MB / %.2f MB | %.2f MB/s | ETA: %s    ",
+						fmt.Printf("\r[PROGRESS] 🔒 %.1f%% | %.2f MB / %.2f MB | %.2f MB/s | ETA: %s    ",
 							percent,
 							float64(totalSent)/1024/1024,
 							float64(fileInfo.Size())/1024/1024,
@@ -590,7 +640,7 @@ func initializeHandshake(pc *webrtc.PeerConnection, roomID string, mode string) 
 	fmt.Println("╚════════════════════════════════════════════════════════════╝")
 
 	if mode == "file" {
-		fmt.Println("\n📦 MODE: FILE BEAM TRANSPORTER")
+		fmt.Println("\n📦 MODE: FILE BEAM TRANSPORTER (E2EE)")
 		fmt.Println("Send this URL to the RECEIVER:")
 	} else {
 		fmt.Println("\n🌐 MODE: SECURE PROXY TUNNEL")
