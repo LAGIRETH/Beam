@@ -1,139 +1,51 @@
 # 🚀 BEAM - Decentralized P2P Data Transport Protocol
 
-## 💀 THE REVENGE
-
 **Beam is a weapon against corporate subscriptions.**
-
-- ❌ WeTransfer? **Killed.** (File Beam Transporter)
-- ❌ Ngrok? **Killed.** (Secure Proxy Tunnel)
-- ❌ Dropbox? **Killed.** (Beam Sync)
-
-**Zero servers. Zero subscriptions. Zero corporate scanning. Pure P2P.**
+Zero servers. Zero subscriptions. Zero corporate scanning. Pure P2P.
 
 ---
 
-## ⚡ FEATURES
+##  FEATURES
 
-### 📦 **1. File Beam Transporter**
+### 📦 1. File Beam Transporter
 Transfer files directly to a browser's hard drive at maximum speed.
+* **No file size limits:** Transfer 100GB+ files without breaking a sweat.
+* **Direct-to-Disk Streaming:** Uses the File System Access API to write massive files directly to the user's hard drive without crashing browser RAM.
+* **Zero Installation:** The receiver doesn't need to download anything; they just open a GitHub Pages URL.
+* **Advanced Flow Control:** Uses `SetBufferedAmountLowThreshold` and direct buffer polling to prevent buffer overflows during massive transfers.
+* **Live Telemetry:** Calculates and displays real-time transfer speed (MB/s) and ETA.
+* **Serverless Signaling:** Uses `ntfy.sh` to pass the WebRTC handshake, costing exactly $0.00.
 
-**Why it's better than WeTransfer:**
-- ✅ **No file size limits** - Transfer 100GB+ files
-- ✅ **No ads** - Clean, brutalist interface
-- ✅ **No waiting** - Direct P2P connection
-- ✅ **No server storage** - Files go directly from your PC to theirs
-- ✅ **Zero installation** - Receiver just opens a browser link
-- ✅ **Real-time progress** - See speed (MB/s) and ETA
-- ✅ **Flow control** - Handles massive files without crashing browsers
+### 🌐 2. Secure Proxy Tunnel Interface
+Expose localhost services to the global internet via WebRTC.
+* **Localhost Exposure:** Exposes a local port (like 3000 or 8080) to the internet without port forwarding.
+* **Custom Binary Protocol:** Invented a 5-byte header protocol (Connection ID + Status Flag) to multiplex multiple TCP connections over a single WebRTC DataChannel.
+* **Browser-as-Gateway:** The remote user's browser acts as the HTTP client, fetching data from the internet and piping it back through the tunnel.
+* **Connection Tracking:** Tracks `BytesSent`, `BytesRecv`, and `LastActive` timestamps for every proxy connection.
+* **Idle Connection Cleanup:** A background goroutine automatically kills TCP connections that haven't sent data in 30 seconds to prevent resource exhaustion.
+* **Holding Page:** Automatically serves a "503 Proxy Offline" HTML page if someone tries to access the tunnel before the WebRTC connection is fully established.
 
-**Speed:** Limited only by your upload bandwidth. If you have 100 Mbps upload, you get ~12 MB/s transfer speed.
+### 🔄 3. Beam Sync P2P Folder Sync
+Real-time folder synchronization between PCs (The Dropbox Killer).
+* **Real-Time File Watching:** Uses `fsnotify` at the OS level to instantly detect file creations, modifications, and deletions.
+* **Bidirectional Sync:** Changes flow both ways simultaneously.
+* **Chunked Binary Transfer:** Breaks large files into 32KB chunks with custom headers (Path Length, Offset, IsLast) to ensure perfect reassembly.
+* **Recursive Directory Watching:** Automatically watches subfolders and creates directories on the remote PC if they don't exist.
+* **Delete Propagation:** If you delete a file on PC-A, it instantly deletes on PC-B.
 
----
-
-### 🌐 **2. Secure Proxy Tunnel**
-Expose localhost services to the internet via WebRTC.
-
-**Why it's better than Ngrok:**
-- ✅ **$0 forever** - No $8/month subscription
-- ✅ **No time limits** - Keep tunnels open as long as you want
-- ✅ **No bandwidth caps** - Unlimited data transfer
-- ✅ **No ads or branding** - Clean, professional
-- ✅ **Multiplexed connections** - Handle multiple simultaneous requests
-- ✅ **Custom binary protocol** - Efficient 5-byte header system
-- ✅ **Connection tracking** - Monitor bytes sent/received per connection
-- ✅ **Idle cleanup** - Automatically closes stale connections
-
-**Use case:** Show your localhost:3000 React app to a client in another country. They open a link, their browser becomes a gateway to your local server.
-
----
-
-### 🔄 **3. Beam Sync**
-Real-time folder synchronization between PCs.
-
-**Why it's better than Dropbox:**
-- ✅ **No storage limits** - Sync as much as your hard drives can hold
-- ✅ **No monthly fees** - $0 forever
-- ✅ **No corporate scanning** - Your files never touch a server
-- ✅ **Real-time sync** - Changes propagate instantly via WebRTC
-- ✅ **Bidirectional** - Both PCs can modify files
-- ✅ **Delete propagation** - Delete on PC-A, deletes on PC-B
-- ✅ **Recursive watching** - Monitors subfolders automatically
-- ✅ **Chunked transfer** - 64KB chunks with custom binary protocol
-
-**Use case:** Sync your work folder between home and office PCs without trusting any cloud provider.
+### 🛡️ Architecture & Security
+* **End-to-End Encrypted:** WebRTC uses DTLS/SRTP encryption. The data is encrypted before it leaves your network interface.
+* **Zero Middleman:** Data travels directly Peer-to-Peer. Not even the free STUN servers can read your payload.
+* **Robust ICE Gathering:** Uses `webrtc.GatheringCompletePromise` to ensure the SDP offer contains all valid network routes before sending.
+* **Graceful Shutdown:** Intercepts `SIGINT` and `SIGTERM` (Ctrl+C) to cleanly close all TCP sockets, DataChannels, and PeerConnections without memory leaks.
+* **Infinite Scalability:** Costs $0 to run whether 1 person uses it or 1 million people use it.
 
 ---
 
-## 🛡️ SECURITY
+##  LICENSE
 
-- **End-to-End Encrypted** - WebRTC uses DTLS/SRTP encryption
-- **Zero Middleman** - Data travels directly P2P
-- **No Server Storage** - Files never touch our infrastructure (we have none)
-- **Open Source** - Audit the code yourself
+This project is licensed under the **GNU Affero General Public License v3.0 (AGPL-3.0)**.
 
----
+This means you are free to use, modify, and distribute this software, even for commercial purposes. However, if you modify the code and run it on a server that interacts with users over a network, you **must** make your modified source code available to those users. 
 
-## 🏗️ ARCHITECTURE
-
-### The Magic: WebRTC + ntfy.sh
-
-**How it works without servers:**
-
-1. **Go CLI** generates a WebRTC Offer (cryptographic handshake)
-2. **ntfy.sh** (free push notification service) temporarily stores the Offer
-3. **Browser** polls ntfy.sh, grabs the Offer, generates an Answer
-4. **Browser** posts Answer back to ntfy.sh
-5. **Go CLI** grabs Answer, completes the handshake
-6. **P2P tunnel established** - ntfy.sh is no longer involved
-7. **Data flows directly** from PC to PC via WebRTC
-
-**Cost:** $0.00 (ntfy.sh is free, GitHub Pages is free, STUN servers are free)
-
----
-
-## 📊 PERFORMANCE
-
-| Feature | Speed | Limit |
-|---------|-------|-------|
-| File Beam | Your upload bandwidth | None (tested 100MB+) |
-| Proxy Tunnel | Your upload bandwidth | Unlimited connections |
-| Beam Sync | Real-time | Unlimited files |
-
----
-
-## 🎯 USE CASES
-
-1. **Developers** - Show localhost apps to clients without deploying
-2. **Designers** - Send massive PSD/AI files to clients instantly
-3. **Teams** - Sync work folders between offices without cloud
-4. **Privacy advocates** - Transfer files without corporate surveillance
-5. **Students** - Share project files without WeTransfer ads
-
----
-
-## 🔧 TECH STACK
-
-- **Language:** Go (Golang) - Single binary, blazing fast
-- **WebRTC:** Pion - Industry-standard Go WebRTC implementation
-- **Signaling:** ntfy.sh - Free, open-source push notifications
-- **File Watching:** fsnotify - Cross-platform filesystem events
-- **UI:** Terminal-based brutalist design
-- **Receiver:** Vanilla HTML/JS (no frameworks, no bloat)
-
----
-
-## 🚀 GETTING STARTED
-
-See [USAGE.md](USAGE.md) for detailed instructions.
-
-**Quick start:**
-```bash
-# Install dependencies
-go get github.com/pion/webrtc/v4
-go get github.com/fsnotify/fsnotify
-
-# Build
-go build -o beam.exe
-
-# Run
-.\beam.exe
+Keep it open. Keep it free.
