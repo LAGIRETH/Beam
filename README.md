@@ -49,9 +49,10 @@ This project is licensed under the **GNU Affero General Public License v3.0 (AGP
 This means you are free to use, modify, and distribute this software, even for commercial purposes. However, if you modify the code and run it on a server that interacts with users over a network, you **must** make your modified source code available to those users. 
 
 Keep it open. Keep it free.
-NOTE
-1 Signaling Server: We rely on ntfy.sh for signaling. While Room IDs are unguessable, ntfy.sh can see the public IP addresses in the SDP payloads. For absolute operational security, self-host your own WebSocket signaling server and modify the initializeHandshake function.
-2 Browser WebRTC Limits: The browser limits WebRTC data channel messages to roughly 256KB. Beam automatically chunks files to 16KB to bypass this, but massive file transfers may be bottlenecked by browser memory.
-3 README.md and TUTORIAL.TXT is written by AI cause i am a devoloper not a proffessional writer.
-4 For maximum security, self-host the beam frontend and change the ntfy.sh signaling endpoint to your own private WebSocket server.
-5 This is open source so remember tht if someone other then me sends u smth like my own I wont be responsible for it. Cause they could change or tweak the code to their liking.
+
+### NOTE
+*  **Signaling Server:** We rely on ntfy.sh for signaling. While Room IDs are unguessable, ntfy.sh can see the public IP addresses in the SDP payloads. For absolute operational security, self-host your own WebSocket signaling server and modify the initializeHandshake function.
+* **Browser WebRTC Limits:** The browser limits WebRTC data channel messages to roughly 256KB. Beam automatically chunks files to 16KB to bypass this, but massive file transfers may be bottlenecked by browser memory.
+*  README.md and TUTORIAL.TXT is written by AI cause i am a devoloper not a proffessional writer.
+* For maximum security, self-host the beam frontend and change the ntfy.sh signaling endpoint to your own private WebSocket server.
+*  This is open source so remember tht if someone other sends u smth like my own codes other then my repo I wont be responsible for it. Cause they could change or tweak the code to their liking.
