@@ -142,7 +142,7 @@ func calculateETA(sent, total int64, elapsed float64) string {
 
 func main() {
 	fmt.Println("╔════════════════════════════════════════════════════════════╗")
-	fmt.Println("║         █ BEAM SECURE MATRIX CORE V6.2 █                  ║")
+	fmt.Println("║         █ BEAM SECURE MATRIX CORE V1.0 █                  ║")
 	fmt.Println("║      Decentralized P2P Data Transport Protocol            ║")
 	fmt.Println("╚════════════════════════════════════════════════════════════╝")
 	fmt.Println()
