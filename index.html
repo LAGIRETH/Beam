@@ -168,6 +168,46 @@
             let fileWritableStream = null;
             let receivedBytes = 0;
             let metadata = null;
+            let cryptoKey = null; // Holds the derived AES-256-GCM decryption key
+
+            // ==========================================
+            // CRYPTOGRAPHIC KEY DERIVATION ENGINE
+            // ==========================================
+            async function deriveCryptoKey(passwordString) {
+                // Initialize the text encoder to convert strings to byte arrays
+                const textEncoder = new TextEncoder();
+                const encodedPassword = textEncoder.encode(passwordString);
+                
+                // Import the raw password material into the Web Crypto API
+                const initialKeyMaterial = await crypto.subtle.importKey(
+                    "raw",
+                    encodedPassword,
+                    { name: "PBKDF2" },
+                    false,
+                    ["deriveKey"]
+                );
+                
+                // Define the cryptographic parameters for key derivation
+                const derivationParameters = {
+                    name: "PBKDF2",
+                    salt: textEncoder.encode("beam-secure-salt-2024"), // Must exactly match the Go backend
+                    iterations: 100000, // High iteration count for brute-force resistance
+                    hash: "SHA-256"
+                };
+                
+                // Define the target key algorithm and usage
+                const targetKeyAlgorithm = { name: "AES-GCM", length: 256 };
+                const keyUsages = ["decrypt"];
+                
+                // Derive and return the final AES-256-GCM CryptoKey
+                return await crypto.subtle.deriveKey(
+                    derivationParameters,
+                    initialKeyMaterial,
+                    targetKeyAlgorithm,
+                    false,
+                    keyUsages
+                );
+            }
 
             async function initFileEngine() {
                 uiState('Connecting pipeline...', 'loading');
@@ -195,22 +235,82 @@
                     };
 
                     dc.onmessage = async (e) => {
+                        // Handle incoming text messages (Metadata payload)
                         if (typeof e.data === 'string') {
                             metadata = JSON.parse(e.data);
                             document.getElementById('fileName').textContent = metadata.name;
                             panel.style.display = 'block';
+                            
+                            // Prompt the user for the decryption password
+                            uiState('Awaiting secure decryption key...', 'loading');
+                            const userPassword = prompt("🔒 This file is encrypted. Enter the decryption password:");
+                            
+                            if (!userPassword) {
+                                uiState('Decryption aborted: Password is required to proceed.', 'error');
+                                dc.close();
+                                return;
+                            }
+                            
+                            try {
+                                // Derive the AES-256-GCM key using PBKDF2
+                                cryptoKey = await deriveCryptoKey(userPassword);
+                                uiState('Decryption key armed. Receiving encrypted block arrays...', 'loading');
+                            } catch (err) {
+                                uiState('Key derivation failed: ' + err.message, 'error');
+                                dc.close();
+                            }
                             return;
                         }
-                        await fileWritableStream.write(e.data);
-                        receivedBytes += e.data.byteLength;
-                        const percent = ((receivedBytes / metadata.size) * 100).toFixed(1);
-                        document.getElementById('transferProgress').textContent = `${percent}%`;
-                        document.getElementById('progressBarFill').style.width = `${percent}%`;
+                        
+                        // Handle incoming binary messages (Encrypted file chunks)
+                        if (!cryptoKey) {
+                            uiState('Critical Error: Received binary data before key derivation.', 'error');
+                            dc.close();
+                            return;
+                        }
 
-                        if (receivedBytes >= metadata.size) {
-                            uiState('Transmission secure. Volume closed.', 'success');
-                            document.getElementById('progressBarFill').style.backgroundColor = 'var(--accent-emerald)';
-                            await fileWritableStream.close();
+                        try {
+                            const rawDataArray = new Uint8Array(e.data);
+                            
+                            // Ensure the packet is large enough to contain at least the nonce
+                            if (rawDataArray.byteLength < 12) {
+                                console.warn('Received malformed packet smaller than 12 bytes.');
+                                return;
+                            }
+                            
+                            // Extract the 12-byte Nonce (IV) from the beginning of the packet
+                            const extractedNonce = rawDataArray.slice(0, 12);
+                            
+                            // Extract the actual ciphertext and authentication tag (the remainder of the packet)
+                            const extractedCiphertext = rawDataArray.slice(12);
+                            
+                            // Decrypt the chunk using the Web Crypto API
+                            const decryptedBuffer = await crypto.subtle.decrypt(
+                                { name: "AES-GCM", iv: extractedNonce },
+                                cryptoKey,
+                                extractedCiphertext
+                            );
+                            
+                            // Write the decrypted chunk to the local file system stream
+                            await fileWritableStream.write(decryptedBuffer);
+                            
+                            // Update the progress tracking variables
+                            receivedBytes += decryptedBuffer.byteLength;
+                            const calculatedPercent = ((receivedBytes / metadata.size) * 100).toFixed(1);
+                            
+                            document.getElementById('transferProgress').textContent = `${calculatedPercent}%`;
+                            document.getElementById('progressBarFill').style.width = `${calculatedPercent}%`;
+
+                            // Check if the entire file has been successfully received and decrypted
+                            if (receivedBytes >= metadata.size) {
+                                uiState('Transmission secure. Volume closed.', 'success');
+                                document.getElementById('progressBarFill').style.backgroundColor = 'var(--accent-emerald)';
+                                await fileWritableStream.close();
+                            }
+                        } catch (err) {
+                            console.error('Decryption error:', err);
+                            uiState('Decryption failed: Wrong password or corrupted data stream.', 'error');
+                            dc.close();
                         }
                     };
                 };
